@@ -236,6 +236,7 @@
 		<cfargument name="parameterize" type="boolean" default="false" />
 		<cfargument name="includeSoftDeletes" type="boolean" default="false" />
 		<cfargument name="useDefaultScope" type="boolean" default="#$useDefaultScope()#" />
+		<cfargument name="executeCallbacks" type="boolean" default="false" />
 		<cfscript>
 			var loc = {};
 			

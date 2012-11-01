@@ -335,10 +335,11 @@
 		<cfargument name="model" type="any" default="false" />
 		<cfargument name="deep" type="boolean" default="true" />
 		<cfargument name="flat" type="boolean" default="false" />
+		<cfargument name="callbacks" type="boolean" default="false" />
 		<cfscript>
 			var loc = {};
 			if (IsObject(arguments.model)) {
-				loc.array = arguments.model.$serializeQueryToObjects(arguments.query, includeString(), false, arguments.deep AND NOT arguments.flat);
+				loc.array = arguments.model.$serializeQueryToObjects(arguments.query, includeString(), arguments.callbacks, arguments.deep AND NOT arguments.flat);
 				if (arguments.flat) {
 					loc.iEnd = ArrayLen(loc.array);
 					for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++)

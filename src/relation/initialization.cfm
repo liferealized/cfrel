@@ -7,6 +7,7 @@
 	<cfargument name="cache" type="string" default="" />
 	<cfargument name="cacheParse" type="boolean" default="#ListFindNoCase(arguments.cache, 'parse')#" />
 	<cfargument name="includeSoftDeletes" type="boolean" default="false" />
+	<cfargument name="executeCallbacks" type="boolean" default="false" />
 	<cfscript>
 		
 		// store classes used for mapper and visitor
@@ -54,6 +55,7 @@
 		variables.paged = false;
 		variables.paginationData = false;
 		variables.includeSoftDeletes = arguments.includeSoftDeletes;
+		variables.executeCallbacks = arguments.executeCallbacks;
 		
 		return this;
 	</cfscript>
