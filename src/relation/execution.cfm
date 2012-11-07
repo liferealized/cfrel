@@ -147,7 +147,7 @@
 				for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++) {
 					
 					// see if param is an array
-					loc.paramIsList = IsArray(loc.parameters[loc.i]);
+					loc.paramIsList = IsArray(loc.parameters[loc.i]) && !IsBinary(loc.parameters[loc.i]);
 					
 					// see if param should be NULL
 					loc.paramIsNull = (loc.paramIsList AND ArrayLen(loc.parameters[loc.i]) EQ 0);
