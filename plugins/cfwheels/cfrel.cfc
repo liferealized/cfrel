@@ -161,6 +161,22 @@
 	</cffunction>
 	
 	<!------------
+	-- Objects ---
+	------------->
+
+	<cffunction name="first" returntype="any" access="public">
+		<cfreturn this.rel().first(argumentCollection=arguments) />
+	</cffunction>
+
+	<cffunction name="last" returntype="any" access="public">
+		<cfreturn this.rel().last(argumentCollection=arguments) />
+	</cffunction>
+
+	<cffunction name="all" returntype="any" access="public">
+		<cfreturn this.rel().all(argumentCollection=arguments) />
+	</cffunction>
+	
+	<!------------
 	-- Scoping ---
 	------------->
 	
@@ -236,7 +252,7 @@
 		<cfargument name="parameterize" type="boolean" default="false" />
 		<cfargument name="includeSoftDeletes" type="boolean" default="false" />
 		<cfargument name="useDefaultScope" type="boolean" default="#$useDefaultScope()#" />
-		<cfargument name="executeCallbacks" type="boolean" default="false" />
+		<cfargument name="executeCallbacks" type="boolean" default="true" />
 		<cfscript>
 			var loc = {};
 			
