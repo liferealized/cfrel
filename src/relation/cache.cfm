@@ -18,7 +18,11 @@
 	<cfscript>
 		var loc.cacheName = _getCacheName(name="objects", argumentCollection=arguments);
 		if (NOT StructKeyExists(variables.cache, loc.cacheName))
-			variables.cache[loc.cacheName] = this.mapper.buildObjectCache(query=this.query(), model=this.model, callbacks=(StructKeyExists(arguments, "callbacks")) ? arguments.callbacks : variables.executeCallbacks, argumentCollection=arguments);
+		{
+			loc.objs = this.mapper.buildObjectCache(query=this.query(callbacks=false), model=this.model, callbacks=(StructKeyExists(arguments, "callbacks")) ? arguments.callbacks : variables.executeCallbacks, argumentCollection=arguments);
+		
+			variables.cache[loc.cachename] = loc.objs;
+		}
 	</cfscript>
 </cffunction>
 
