@@ -90,7 +90,7 @@
 		_buildObjectCache(argumentCollection=arguments);
 		loc.cacheName = _getCacheName(name="objects", argumentCollection=arguments);
 		if (ArrayLen(variables.cache[loc.cacheName]) LT arguments.index OR NOT ArrayIsDefined(variables.cache[loc.cacheName], arguments.index)) {
-			loc.obj = this.mapper.buildObject(query=this.query(), model=this.model, argumentCollection=arguments);
+			loc.obj = this.mapper.buildObject(query=this.query(callbacks=false), model=this.model, argumentCollection=arguments);
 			ArraySet(variables.cache[loc.cacheName], arguments.index, arguments.index, loc.obj);
 		}
 		return variables.cache[loc.cacheName][arguments.index];
@@ -102,11 +102,22 @@
 	<cfargument name="deep" type="boolean" required="false" />
 	<cfscript>
 		var loc = {};
+
+		// build the object cache first to see if our objects are already there
+		_buildObjectCache(argumentCollection=arguments);
+		loc.cacheName = _getCacheName(name="objects", argumentCollection=arguments);
+
+		if (StructKeyExists(variables.cache, loc.cacheName) and arrayLen(variables.cache[loc.cacheName]))
+			return variables.cache[loc.cacheName];
+
 		loc.iEnd = recordCount();
 		if (loc.iEnd EQ 0)
 			return [];
+
+		// _buildObjectCache didn't create anything so we'll do it here
 		for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++)
 			object(index=loc.i, argumentCollection=arguments);
-		return variables.cache[_getCacheName(name="objects", argumentCollection=arguments)];
+
+		return variables.cache[loc.cacheName];
 	</cfscript>
 </cffunction>
