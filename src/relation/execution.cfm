@@ -185,7 +185,7 @@
 			variables.executed = true;
 		
 			// call the mapper to cache data as needed
-			this.mapper.cacheData(this, variables.cache.query, variables.cache.result);
+			this.mapper.cacheData(this, variables.cache.query, variables.cache.result, variables.paginationData);
 		}
 		
 		return variables.cache.query;

@@ -393,10 +393,14 @@
 		<cfargument name="relation" type="any" required="true">
 		<cfargument name="query" type="query" required="true">
 		<cfargument name="results" type="struct" required="true">
+		<cfargument name="paginationData" type="any" required="false" default="false" />
 		<cfscript>
 			if (StructKeyExists(arguments.relation, "model") AND IsObject(arguments.relation.model)) {
 				injectInspector(arguments.relation.model);
 				request.wheels[arguments.relation.model.$hashedKey(arguments.query)] = arguments.relation.model._inspect().wheels.class.modelName;
+
+				if (isStruct(arguments.paginationData))
+					arguments.relation.model.setPagination(arguments.relation.countTotalRecords(), arguments.paginationData.currentPage, arguments.paginationData.perPage, arguments.relation.model._inspect().wheels.class.modelName);
 			}
 		</cfscript>
 		<cfreturn>

@@ -161,5 +161,6 @@
 		<cfargument name="relation" type="any" required="true">
 		<cfargument name="query" type="query" required="true">
 		<cfargument name="results" type="struct" required="true">
+		<cfargument name="paginationData" type="any" required="false" default="false" />
 	</cffunction>
 </cfcomponent>
