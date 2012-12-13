@@ -452,21 +452,46 @@
 				if (loc.placeholderCount NEQ loc.parameterCount)
 					throwException(message="Parameter count does not match number of placeholders in #UCase(arguments.clause)# clause");
 			}
+
+			loc.transformedInput = _transformInput(arguments.args.$clause, arguments.clause);
+
+			// check for single relations in the $params
+			// if we find one, put the relation into the right
+			// side of the transformed input and instead insert
+			// any params from that relation into parameterColumnScope
+			if (loc.parameterCount == 1 and typeOf(arguments.args.$params[1]) == "cfrel.Relation") {
+
+				loc.relation = arguments.args.$params[1];
+				loc.transformedInput.right = sqlParen(loc.relation);
+
+				// merge the mapper from the where clause into our mapper
+				this.mapper.mergeMapper(loc.relation.mapper);
+
+				ArrayAppend(this.sql[arguments.scope], loc.transformedInput);
+
+				for (loc.param in loc.relation.sql[arguments.parameterScope])
+					ArrayAppend(this.sql[arguments.parameterScope], loc.param);
 				
-			// append clause and parameters to sql options
-			ArrayAppend(this.sql[arguments.scope], _transformInput(arguments.args.$clause, arguments.clause));
-			for (loc.i = 1; loc.i LTE loc.parameterCount; loc.i++) {
-				ArrayAppend(this.sql[arguments.parameterScope], arguments.args.$params[loc.i]);
-				if (loc.type NEQ "simple")
-					ArrayAppend(this.sql[arguments.parameterColumnScope], "");
-			}
-		
-			// append parameter column mappings
-			if (loc.type EQ "simple") {
-				loc.parameterColumns = variables.parser.getParameterColumns();
-				loc.iEnd = ArrayLen(loc.parameterColumns);
-				for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++)
-					ArrayAppend(this.sql[arguments.parameterColumnScope], loc.parameterColumns[loc.i]);
+				for (loc.param in loc.relation.sql[arguments.parameterColumnScope])
+					ArrayAppend(this.sql[arguments.parameterColumnScope], loc.param);
+			
+			} else {
+				
+				// append clause and parameters to sql options
+				ArrayAppend(this.sql[arguments.scope], loc.transformedInput);
+				for (loc.i = 1; loc.i LTE loc.parameterCount; loc.i++) {
+					ArrayAppend(this.sql[arguments.parameterScope], arguments.args.$params[loc.i]);
+					if (loc.type NEQ "simple")
+						ArrayAppend(this.sql[arguments.parameterColumnScope], "");
+				}
+			
+				// append parameter column mappings
+				if (loc.type EQ "simple") {
+					loc.parameterColumns = variables.parser.getParameterColumns();
+					loc.iEnd = ArrayLen(loc.parameterColumns);
+					for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++)
+						ArrayAppend(this.sql[arguments.parameterColumnScope], loc.parameterColumns[loc.i]);
+				}
 			}
 			
 		} else {
