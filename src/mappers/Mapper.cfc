@@ -12,6 +12,19 @@
 			return this;
 		</cfscript>
 	</cffunction>
+
+	<cffunction name="mergeMapper" access="public" output="false" returntype="void">
+		<cfargument name="mapper" type="Mapper" required="true" />
+		<cfscript>
+			injectInspector(arguments.mapper);
+
+			structAppend(variables.tables, arguments.mapper._inspect().tables, false);
+			structAppend(variables.columns, arguments.mapper._inspect().columns, false);
+
+			for (loc.model in arguments.mapper._inspect().models)
+				arrayAppend(variables.models, loc.model);
+		</cfscript>
+	</cffunction>
 	
 	<cffunction name="clearMapping" returntype="void" access="public">
 		<cfscript>
