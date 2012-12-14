@@ -22,8 +22,10 @@
 
 			for (loc.column in arguments.mapper._inspect().columns)
 			{
-				loc.key = uniqueScopeKey(key=loc.column, prefix=arguments.mapper._inspect().columns[loc.column].table, scope=variables.columns);
-				variables.columns[loc.key] = arguments.mapper._inspect().columns[loc.column];
+				loc.data = duplicate(arguments.mapper._inspect().columns[loc.column]);
+				loc.data.mapWildcard = false;
+				loc.key = uniqueScopeKey(key=loc.column, prefix=loc.data.table, scope=variables.columns);
+				variables.columns[loc.key] = loc.data;
 			}
 
 			for (loc.model in arguments.mapper._inspect().models)
@@ -132,7 +134,7 @@
 			loc.columns = ArrayNew(1);
 			for (loc.key in variables.columns) {
 				loc.col = variables.columns[loc.key];
-				if (StructKeyExists(loc.col, "table") AND (Len(arguments.table) EQ 0 OR loc.col.table EQ arguments.table))
+				if (StructKeyExists(loc.col, "table") AND (Len(arguments.table) EQ 0 OR loc.col.table EQ arguments.table) AND loc.col.mapWildcard)
 					ArrayAppend(loc.columns, sqlColumn(column=loc.col.value, alias=loc.key));
 			}
 			return loc.columns;

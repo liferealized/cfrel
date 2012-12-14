@@ -30,6 +30,7 @@
 				loc.colData = {};
 				loc.colData.value = loc.tableAlias & "." & loc.col.column;
 				loc.colData.table = loc.tableAlias;
+				loc.colData.mapWildcard = true;
 				loc.colData.cf_sql_type = loc.col.type;
 					
 				// deal with column name conflicts
