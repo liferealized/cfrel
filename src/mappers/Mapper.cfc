@@ -19,7 +19,12 @@
 			injectInspector(arguments.mapper);
 
 			structAppend(variables.tables, arguments.mapper._inspect().tables, false);
-			structAppend(variables.columns, arguments.mapper._inspect().columns, false);
+
+			for (loc.column in arguments.mapper._inspect().columns)
+			{
+				loc.key = uniqueScopeKey(key=loc.column, prefix=arguments.mapper._inspect().columns[loc.column].table, scope=variables.columns);
+				variables.columns[loc.key] = arguments.mapper._inspect().columns[loc.column];
+			}
 
 			for (loc.model in arguments.mapper._inspect().models)
 				arrayAppend(variables.models, loc.model);
