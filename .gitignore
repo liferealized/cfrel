@@ -5,3 +5,7 @@
 build
 WEB-INF
 plugins/cfwheels/lib
+index.cfm
+cfrel.cfc
+lib/*
+lib
