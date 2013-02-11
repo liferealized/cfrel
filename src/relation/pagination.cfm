@@ -59,7 +59,7 @@
 		if (ArrayLen(this.sql.groups) GT 0) {
 				
 			// make query distinct
-			loc.rel.distinct();
+			//loc.rel.distinct();
 			
 			// use GROUP BY as SELECT
 			loc.rel.sql.select = Duplicate(loc.rel.sql.groups);
