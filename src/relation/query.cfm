@@ -139,6 +139,7 @@
 				
 				// map the models using the mapper, but place soft delete condition on the join
 				if (NOT arguments.$skipMapping) {
+
 					this.mapper.buildMapping(loc.table, this, true);
 
 					// if we have an ON clause and soft deletions are available, put them in the ON clause
@@ -287,6 +288,7 @@
 			return this.clone().clearWhere(argumentCollection=arguments);
 		this.sql.wheres = [];
 		this.sql.whereParameters = [];
+		this.sql.whereParameterColumns = [];
 		return this;
 	</cfscript>
 </cffunction>
