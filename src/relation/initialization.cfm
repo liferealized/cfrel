@@ -95,5 +95,6 @@
 </cffunction>
 
 <cffunction name="subQuery" returntype="any" access="public" hint="Create new rel with the current rel as the child">
-	<cfreturn new(datasource=this.datasource, visitor=variables.visitorClass, qoq=variables.qoq).from(this) />
+	<cfargument name="mapper" type="string" default="Mapper" />
+	<cfreturn new(datasource=this.datasource, visitor=variables.visitorClass, qoq=variables.qoq, mapper=arguments.mapper).from(this) />
 </cffunction>
