@@ -90,7 +90,7 @@
 		// stack on join parameter columns
 		loc.iEnd = ArrayLen(this.sql.joinParameterColumns);
 		for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++) {
-			if (typeOf(this.sql.joins[loc.i].table) EQ "cfrel.nodes.SubQuery")
+			if (arrayLen(this.sql.joins) gte loc.i AND typeOf(this.sql.joins[loc.i].table) EQ "cfrel.nodes.SubQuery")
 				arguments.stack = this.sql.joins[loc.i].table.subject.getParameters(arguments.stack);
 			ArrayAppend(arguments.stack, this.mapper.columnDataType(this.sql.joinParameterColumns[loc.i]));
 		}
