@@ -1,59 +1,47 @@
 <cffunction name="parse" returntype="any" access="public" hint="Turn a SQL string into a tree of nodes">
 	<cfargument name="str" type="string" required="true" />
 	<cfargument name="clause" type="string" default="WHERE" />
-	<cfargument name="params" type="array" default="#ArrayNew(1)#" />
 	<cfscript>
 		var loc = {};
+		
+		// determine beginning grammar rule
+		switch (arguments.clause) {
+			case "SELECT":
+			case "GROUP BY":
+				loc.rule = "exprs";
+				break;
+			case "ORDER BY":
+				loc.rule = "orderExprs";
+				break;
+			default:
+				loc.rule = "expr";
+		}
 		
 		// try to read from cache if turned on
 		if (variables.cacheParse) {
 		
 			// create key for cache
-			loc.cacheKey = Hash("#arguments.clause#:#arguments.str#", "MD5");
+			loc.cacheKey = Hash("#loc.rule#:#variables.parameterize#:#arguments.str#", Application.cfrel.HASH_ALGORITHM);
 			
-			// set up parse cache
-			if (NOT StructKeyExists(application, "cfrel"))
-				application.cfrel = {parseCache={}, paramCache={}};
-				
-			// if key exists, set the parameter columns
-			if (StructKeyExists(application.cfrel.paramCache, loc.cacheKey))
-				variables.parameterColumns = application.cfrel.paramCache[loc.cacheKey];
-				
-			// if key exists, just return cached parse tree
-			if (StructKeyExists(application.cfrel.parseCache, loc.cacheKey))
-				return Duplicate(application.cfrel.parseCache[loc.cacheKey]);
+			// if key is in cache, just return cached parse tree
+			if (inCache("parse", loc.cacheKey))
+				return Duplicate(loadCache("parse", loc.cacheKey));
 		}
 		
 		// break incoming string into tokens
 		tokenize(arguments.str);
+
+		// match against selected grammar rule
+		var method = variables[loc.rule];
+		loc.tree = method();
 		
-		// set positional parameters in variables scope
-		variables.parseParameters = arguments.params;
-		
-		// parse string depending on clause type
-		switch (arguments.clause) {
-			case "SELECT":
-			case "GROUP BY":
-				loc.tree = exprs();
-				break;
-			case "ORDER BY":
-				loc.tree = orderExprs();
-				break;
-			default:
-				loc.tree = expr();
-		}
-		
-		// if tokens or parameters are still left, throw an error
+		// if tokens are still left, throw an error
 		if (tokenIndex LTE tokenLen)
 			throwException("Parsing error. Not all tokens processed. #tokenIndex - 1# of #tokenLen# processed.");
-		if (ArrayLen(variables.parseParameters))
-			throwException("Parsing error. Too many parameters passed into #UCase(arguments.clause)#.");
 			
-		// cache the parse tree and parameter columns in the application scope
-		if (variables.cacheParse) {
-			application.cfrel.parseCache[loc.cacheKey] = Duplicate(loc.tree);
-			application.cfrel.paramCache[loc.cacheKey] = variables.parameterColumns;
-		}
+		// cache the parse tree in the application scope
+		if (variables.cacheParse)
+			saveCache("parse", loc.cacheKey, Duplicate(loc.tree));
 		
 		return loc.tree;
 	</cfscript>
@@ -64,39 +52,26 @@
 	<cfscript>
 		var loc = {};
 		
-		// match against string terminals
-		loc.start = 1;
-		loc.matches = REFindNoCase(literalRegex, arguments.str, loc.start, true);
-		while (loc.matches.pos[1] GT 0) {
-			
-			// grab substring
-			loc.match = Mid(arguments.str, loc.matches.pos[1], loc.matches.len[1]);
-			
-			// place match in literal array
-			ArrayAppend(variables.literals, loc.match);
-			
-			// get new start position for search
-			loc.start = loc.matches.pos[1] + loc.matches.len[1];
+		// regular expression for string and numeric literals
+		loc.literalRegex = "('{ts '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'}'|'([^']*((\\|')'[^']*)*[^\'])?'|-?(\B|\b\d+)\.\d+\b|-?\b\d+\b)";
 		
-			// match against more string terminals
-			loc.matches = REFindNoCase(literalRegex, arguments.str, loc.start, true);
-		}
+		// regular expression for all terminals (including literal placeholders)
+		loc.terminalRegex = "::(dt|str|dec|int)::|\?|\.|,|\(|\)|\+|-|&|\^|\||\*|/|%|~|<=>|<=|>=|<>|!=|!>|!<|=|<|>|\b(AS|NOT|LIKE|BETWEEN|AND|OR|ASC|DESC|NULL|CAST|IS|IN|CASE|WHEN|THEN|ELSE|END|DISTINCT)\b|[\[""`]?(\w+)[""`\]]?";
+
+		// extract literals (strings, numbers, dates, etc) out of the input string
+		variables.literals = REMatch(loc.literalRegex, arguments.str);
 		
 		// replace literals with placeholders
-		arguments.str = REReplaceNoCase(arguments.str, l.date, t.date, "ALL");
-		arguments.str = REReplaceNoCase(arguments.str, l.string, t.string, "ALL");
-		arguments.str = REReplaceNoCase(arguments.str, l.decimal, t.decimal, "ALL");
-		arguments.str = REReplaceNoCase(arguments.str, l.integer, t.integer, "ALL");
-		
-		// pad symbols with spaces and replace consecutive spaces
-		arguments.str = REReplaceNoCase(arguments.str, "(#terminalRegex#)", " \1 ", "ALL");
-		arguments.str = Trim(REReplaceNoCase(arguments.str, "(\s+)", " ", "ALL"));
+		arguments.str = REReplaceNoCase(arguments.str, "'{ts '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'}'", "::dt::", "ALL");
+		arguments.str = REReplaceNoCase(arguments.str, "'([^']*((\\|')'[^']*)*[^\'])?'", "::str::", "ALL");
+		arguments.str = REReplaceNoCase(arguments.str, "-?(\B|\b\d+)\.\d+\b", "::dec::", "ALL");
+		arguments.str = REReplaceNoCase(arguments.str, "-?\b\d+\b", "::int::", "ALL");
 		
 		// replace escaped identifiers with their unescaped values
-		arguments.str = REReplace(arguments.str, t.identifier, "\1", "ALL");
+		arguments.str = REReplace(arguments.str, "[\[""`]?(\w+)[""`\]]?", "\1", "ALL");
 		
-		// split string into tokens by spaces
-		variables.tokens = ListToArray(arguments.str, " ");
+		// split string into tokens using using terminal pattern
+		variables.tokens = REMatchNoCase(loc.terminalRegex, arguments.str);
 		
 		// set up counters for rest of parse
 		variables.tokenIndex = 1;
@@ -104,20 +79,10 @@
 	</cfscript>
 </cffunction>
 
-<cffunction name="peek" returntype="boolean" access="private" hint="See if next item on token stack matches regex">
-	<cfargument name="regex" type="string" required="true" />
-	<cfargument name="offset" type="numeric" default="0" />
+<cffunction name="accept" returntype="boolean" access="private" hint="Return true if next item on stack matches string and increment pointer">
+	<cfargument name="str" type="string" required="true" />
 	<cfscript>
-		if (tokenIndex + arguments.offset GT tokenLen)
-			return false;
-		return (REFindNoCase("^(?:#arguments.regex#)$", tokens[tokenIndex + arguments.offset]) GT 0);
-	</cfscript>
-</cffunction>
-
-<cffunction name="accept" returntype="boolean" access="private" hint="Return true if next item on stack matches and increment pointer">
-	<cfargument name="regex" type="string" required="true" />
-	<cfscript>
-		if (peek(arguments.regex)) {
+		if (tokenIndex LTE tokenLen AND tokens[tokenIndex] EQ arguments.str) {
 			tokenIndex++;
 			return true;
 		}
@@ -125,13 +90,32 @@
 	</cfscript>
 </cffunction>
 
-<cffunction name="expect" returntype="boolean" access="private" hint="Accept next item on stack or error out">
+<cffunction name="expect" returntype="boolean" access="private" hint="Accept next string item on stack or error out">
+	<cfargument name="str" type="string" required="true" />
+	<cfscript>
+		if (NOT accept(arguments.str))
+			throwException("Unexpected token found in SQL parse: #tokens[tokenIndex]#");
+		return true;
+	</cfscript>
+</cffunction>
+
+<cffunction name="acceptRegex" returntype="boolean" access="private" hint="Return true if next item on stack matches regex and increment pointer">
 	<cfargument name="regex" type="string" required="true" />
 	<cfscript>
-		if (accept(arguments.regex))
+		if (tokenIndex LTE tokenLen AND REFindNoCase("^(?:#arguments.regex#)$", tokens[tokenIndex]) GT 0) {
+			tokenIndex++;
 			return true;
-		throwException("Unexpected token found in SQL parse: #tokens[tokenIndex]#");
+		}
 		return false;
+	</cfscript>
+</cffunction>
+
+<cffunction name="expectRegex" returntype="boolean" access="private" hint="Accept next regex item on stack or error out">
+	<cfargument name="regex" type="string" required="true" />
+	<cfscript>
+		if (NOT acceptRegex(arguments.regex))
+			throwException("Unexpected token found in SQL parse: #tokens[tokenIndex]#");
+		return true;
 	</cfscript>
 </cffunction>
 

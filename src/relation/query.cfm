@@ -34,6 +34,10 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().select(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			appendSignature(GetFunctionCalledName(), arguments);
+
 		_appendFieldsToClause("SELECT", "select", arguments);
 		return this;
 	</cfscript>
@@ -43,6 +47,10 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().distinct(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			appendSignature(GetFunctionCalledName(), arguments);
+
 		if (NOT ArrayFind(this.sql.selectFlags, "DISTINCT"))
 			ArrayAppend(this.sql.selectFlags, "DISTINCT");
 		return this;
@@ -57,45 +65,53 @@
 		// auto-clone if relation already executed
 		if (variables.executed)
 			return this.clone().from(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			appendSignature(GetFunctionCalledName(), arguments);
 		
 		// make decision based on argument type
 		switch(typeOf(arguments.target)) {
 			
-			// accept relations as subqueries
+			// wrap simple strings in table nodes
+			case "simple":
+				arguments.target = sqlTable(arguments.target);
+			case "cfrel.nodes.Table":
+				break;
+			
+			// wrap relations in subquery nodes
 			case "cfrel.Relation":
 				arguments.target = sqlSubquery(arguments.target);
+			case "cfrel.nodes.SubQuery":
 				break;
 			
-			// accept model and add model to mapping
+			// wrap models in model nodes
 			case "model":
+				arguments.target = sqlModel(arguments.target.$classData().modelName);
+			case "cfrel.nodes.Model":
+
+				// set default soft delete behavior
+				if (NOT StructKeyExists(arguments.target, "includeSoftDeletes"))
+					arguments.target.includeSoftDeletes = variables.includeSoftDeletes;
 			
 				// set model for mapper behavior
-				if (NOT IsObject(this.model))
-					this.model = arguments.target;
-				
-				// set up table node to wrap model
-				arguments.target = sqlTable(model=arguments.target);
-				break;
-				
-			case "simple":
-				arguments.target = sqlTable(table=arguments.target);
+				if (this.model EQ false)
+					this.model = arguments.target.model;
 				break;
 			
-			// accept queries for QoQ operations
+			// wrap queries in query nodes
 			case "query":
-				variables.qoq = true;
-				
+				arguments.target = sqlQuery(arguments.target);
+			case "cfrel.nodes.Query":
+			
 				// change visitor for QoQ operations
+				variables.qoq = true;
 				variables.visitorClass = "QueryOfQuery";
 				break;
 				
-			// and reject all others by throwing an error
+			// and reject all other arguments by throwing an error
 			default:
-				throwException("Only a table name or another relation can be in FROM clause");
+				throwException("Only a table names, relations, queries, or models can be in FROM clause");
 		}
-		
-		// queue mappings for later execution
-		queueMapping(arguments.target);
 		
 		// put the target onto the FROM stack
 		ArrayAppend(this.sql.froms, arguments.target);
@@ -108,14 +124,16 @@
 	<cfargument name="condition" type="any" default="false" />
 	<cfargument name="params" type="array" default="#[]#" />
 	<cfargument name="type" type="string" default="inner" hint="inner, outer, natural, or cross" />
-	<cfargument name="$skipMapping" type="boolean" default="false" />
 	<cfscript>
 		var loc = {};
 		if (variables.executed)
 			return this.clone().join(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			appendSignature(GetFunctionCalledName(), arguments);
 			
 		// correctly set condition of join
-		if (typeOf(arguments.condition) NEQ "simple") {
+		if (NOT IsSimpleValue(arguments.condition)) {
 			loc.condition = arguments.condition;
 		} else if (arguments.condition NEQ false) {
 			loc.condition = parse(arguments.condition);
@@ -126,42 +144,42 @@
 		// create table object
 		switch(typeOf(arguments.target)) {
 			
-			// assume simple values are names
+			// wrap strings in table nodes
 			case "simple":
-				loc.table = sqlTable(table=arguments.target);
+				arguments.target = sqlTable(table=arguments.target);
+			case "cfrel.nodes.table":
 				break;
 				
 			// add a model to a new table object
 			case "model":
-				loc.table = sqlTable(model=arguments.target);
+				arguments.target = sqlModel(arguments.target.$classData().modelName);
+			case "cfrel.nodes.model":
+
+				// set default soft delete behavior
+				if (NOT StructKeyExists(arguments.target, "includeSoftDeletes"))
+					arguments.target.includeSoftDeletes = variables.includeSoftDeletes;
+
 				break;
 				
 			// use another relation as a subquery
 			case "cfrel.relation":
-				loc.table = sqlSubQuery(arguments.target);
-				break;
-				
-			// just use raw table object
-			case "cfrel.nodes.table":
-				loc.table = arguments.target;
+				arguments.target = sqlSubQuery(arguments.target);
 				break;
 				
 			// if using a query
 			case "query":
+				arguments.target = sqlQuery(arguments.target);
+			case "cfrel.nodes.query":
 				if (variables.qoq EQ false)
 					throwException("Cannot join a query object if relation is not a QoQ");
 					
-				// add the query as an additional from
+				// add the query as an additional from instead of joining
 				ArrayAppend(this.sql.froms, arguments.target);
 				
 				// put conditions in where clause if not a cross join
 				// TODO: make up some fancy way to handle QoQ natural joins
 				if (arguments.type NEQ "cross")
 					this.where(arguments.condition, arguments.params);
-				
-				// map the query and return
-				queueMapping(arguments.target);
-				return this;
 				break;
 				
 			// throw error if invalid target
@@ -170,12 +188,11 @@
 				
 		}
 		
-		// queue the mapping of the join table
-		if (NOT arguments.$skipMapping)
-			queueMapping(loc.table);
-		
-		// append join to sql structure
-		ArrayAppend(this.sql.joins, sqlJoin(loc.table, loc.condition, arguments.type));
+		// append join to sql structure unless this is a qoq
+		if (NOT variables.qoq) {
+			ArrayAppend(this.sql.joins, sqlJoin(arguments.target, loc.condition, arguments.type));
+			ArrayAppend(this.params.joins, arguments.params, true);
+		}
 		
 		return this;
 	</cfscript>
@@ -187,6 +204,7 @@
 	<cfscript>
 		if (variables.executed)
 			return this.qoq().where(argumentCollection=arguments);
+
 		_appendConditionsToClause("WHERE", "wheres", arguments);
 		return this;
 	</cfscript>
@@ -196,6 +214,10 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().group(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			appendSignature(GetFunctionCalledName(), arguments);
+
 		_appendFieldsToClause("GROUP BY", "groups", arguments);
 		return this;
 	</cfscript>
@@ -207,6 +229,7 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().having(argumentCollection=arguments);
+
 		_appendConditionsToClause("HAVING", "havings", arguments);
 		return this;
 	</cfscript>
@@ -216,6 +239,10 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().order(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			appendSignature(GetFunctionCalledName(), arguments);
+
 		_appendFieldsToClause("ORDER BY", "orders", arguments);
 		return this;
 	</cfscript>
@@ -226,6 +253,10 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().limit(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			appendSignature(GetFunctionCalledName(), arguments);
+
 		if (variables.qoq)
 			this.maxRows = Int(arguments.value);
 		else
@@ -239,6 +270,10 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().offset(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			appendSignature(GetFunctionCalledName(), arguments);
+
 		this.sql.offset = Int(arguments.value);
 		return this;
 	</cfscript>
@@ -248,6 +283,10 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().clearSelect(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			removeFromSignature({"select"=1});
+
 		this.sql.select = [];
 		this.sql.selectFlags = [];
 		return this;
@@ -258,7 +297,12 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().clearWhere(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			removeFromSignature({"where"=1});
+
 		this.sql.wheres = [];
+		this.params.wheres = [];
 		return this;
 	</cfscript>
 </cffunction>
@@ -267,6 +311,10 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().clearGroup(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			removeFromSignature({"group"=1});
+
 		this.sql.groups = [];
 		return this;
 	</cfscript>
@@ -276,7 +324,12 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().clearHaving(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			removeFromSignature({"having"=1});
+
 		this.sql.havings = [];
+		this.params.havings = [];
 		return this;
 	</cfscript>
 </cffunction>
@@ -285,6 +338,10 @@
 	<cfscript>
 		if (variables.executed)
 			return this.clone().clearOrder(argumentCollection=arguments);
+
+		if (variables.cacheSql)
+			removeFromSignature({"order"=1});
+
 		this.sql.orders = [];
 		return this;
 	</cfscript>
@@ -322,32 +379,214 @@
 	<cfargument name="include" type="string" required="true" />
 	<cfargument name="params" type="array" default="#[]#" />
 	<cfargument name="joinType" type="string" default="" />
+	<cfargument name="merge" type="boolean" default="true" />
 	<cfscript>
 		var loc = {};
+
 		if (variables.executed)
 			return this.clone().include(argumentCollection=arguments);
-		
-		// queue include and its mappings for later
-		queueMapping(arguments);
+
+		if (variables.cacheSql)
+			appendSignature(GetFunctionCalledName(), arguments);
+
+		// always append parameters to the relation
+		ArrayAppend(this.params.joins, arguments.params, true);
+
+		// merge with a previous include statement if we can
+		loc.len = ArrayLen(this.sql.joins);
+		if (arguments.merge AND loc.len GT 0 AND typeOf(this.sql.joins[loc.len]) EQ "cfrel.nodes.include") {
+			this.sql.joins[loc.len] = mergeIncludes(this.sql.joins[loc.len], arguments.include, arguments.joinType);
+
+		// otherwise, append a new include statement to the join list
+		} else {
+			loc.include = sqlInclude(include=arguments.include, includeKey=ListAppend(arguments.joinType, arguments.include, ':'), tree=includeTree(arguments.include, arguments.joinType), includeSoftDeletes=variables.includeSoftDeletes);
+			ArrayAppend(this.sql.joins, loc.include);
+		}
 			
 		return this;
 	</cfscript>
 </cffunction>
 
-<cffunction name="includeString" returntype="string" access="public" hint="Return minimized include string">
-	<cfargument name="includes" type="struct" default="#variables.mappings.includes#" />
+<cffunction name="mergeIncludes" returntype="struct" access="private" hint="Merge two include statements into one">
+	<cfargument name="dest" type="struct" required="true" />
+	<cfargument name="include" type="string" required="true" />
+	<cfargument name="joinType" type="string" default="" />
+	<cfscript>
+		arguments.dest.include = ListAppend(arguments.dest.include, arguments.include);
+		arguments.dest.includeKey = ListAppend(arguments.dest.includeKey, ListAppend(arguments.joinType, arguments.include, ':'), ';');
+		arguments.dest.tree = includeTree(arguments.include, arguments.joinType, arguments.dest.tree);
+		return arguments.dest;
+	</cfscript>
+</cffunction>
+
+<cffunction name="includeTree" returntype="struct" access="private">
+	<cfargument name="include" type="string" required="true" />
+	<cfargument name="joinType" type="string" required="true" />
+	<cfargument name="dest" type="struct" required="false" />
 	<cfscript>
 		var loc = {};
-		loc.rtn = "";
-		for (loc.key in arguments.includes) {
-			if (loc.key NEQ "_alias") {
-				if (StructCount(arguments.includes[loc.key]) GT 1)
-					loc.key &= "(#includeString(arguments.includes[loc.key])#)";
-				loc.rtn = ListAppend(loc.rtn, loc.key);
+
+		// return value: join options and the order in which they occur
+		if (NOT StructKeyExists(arguments, "dest")) {
+			arguments.dest = StructNew();
+			arguments.dest.options = StructNew();
+			arguments.dest.order = ArrayNew(1);
+		}
+
+		// track join prefix and depth
+		loc.prefix = "";
+		loc.depth = 0;
+
+    // split include string into meaningful tokens
+    loc.regex = "(\w+(\[[^\]]+\])?|\(|\))";
+    loc.tokens = REMatch(loc.regex, arguments.include);
+
+    // loop over each token
+    loc.curr = "";
+    loc.iEnd = ArrayLen(loc.tokens);
+    for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++) {
+    	switch (loc.tokens[loc.i]) {
+
+    		// on left paren, push the current association name onto the prefix
+    		case "(": 
+    			loc.prefix = ListAppend(loc.prefix, loc.curr, "_");
+    			loc.depth++;
+    			break;
+
+    		// on right paren, pop the last association name off the prefix
+    		case ")":
+					if (loc.depth GT 0)
+						loc.prefix = ListDeleteAt(loc.prefix, loc.depth--, "_");
+					break;
+
+				// for identifiers, make a new entry
+    		default:
+    			loc.curr = loc.tokens[loc.i];
+    			loc.options = StructNew();
+    			loc.options.joinType = arguments.joinType;
+
+					// extract additional conditioning from include statement if it exists
+					loc.startPos = Find("[", loc.curr);
+					if (loc.startPos GT 1) {
+						loc.endPos = Find("]", loc.curr, loc.startPos);
+						if (loc.endPos LTE loc.startPos)
+							throwException("Invalid format found in include condition: '#loc.curr#'");
+						loc.options.condition = parse(Mid(loc.curr, loc.startPos + 1, loc.endPos - loc.startPos - 1));
+						loc.curr = Left(loc.curr, loc.startPos - 1);
+					}
+
+					// save the include options for return
+					loc.joinKey = ListAppend(loc.prefix, loc.curr, "_");
+					if (NOT StructKeyExists(arguments.dest.options, loc.joinKey)) {
+						ArrayAppend(arguments.dest.order, loc.joinKey);
+						arguments.dest.options[loc.joinKey] = loc.options;
+					}
+    	}
+    }
+
+    return arguments.dest;
+	</cfscript>
+</cffunction>
+
+<cffunction name="includeString" returntype="string" access="public" hint="Return minimized include string">
+	<cfscript>
+		var loc = {};
+		loc.finalInclude = "";
+
+		// process each include for this relation's joins
+		for (loc.join in this.sql.joins) {
+			if (loc.join.$class EQ "cfrel.nodes.include") {
+
+				// keep lists of join segments and segments which are redundant
+				loc.segments = Duplicate(loc.join.tree.order);
+				loc.redundant = false;
+				loc.redundantSegments = [];
+
+				// sort the include segments in order of descendents
+				loc.segmentCount = ArrayLen(loc.segments);
+				for (loc.i = 1; loc.i LTE loc.segmentCount; loc.i++) {
+
+					// build a regex for detecting direct children of this node
+					loc.regex = "^" & loc.segments[loc.i] & "_[^_\W]+$";
+
+					// for each segment, search for direct children in the rest of the segments
+					loc.nextPos = loc.i + 1;
+					for (loc.j = loc.nextPos; loc.j LTE loc.segmentCount; loc.j++) {
+
+						// if we find one, move it to the correct position
+						if (REFind(loc.regex, loc.segments[loc.j])) {
+
+							// only physically move the child if it is not already in the correct place
+							if (loc.j NEQ loc.nextPos) {
+								loc.tmp = loc.segments[loc.j];
+								ArrayDeleteAt(loc.segments, loc.j);
+								ArrayInsertAt(loc.segments, loc.nextPos, loc.tmp);
+							}
+
+ 							// mark this redundant segment for removal and increment the next segment placing
+							loc.redundant = true;
+							loc.nextPos++;
+						}
+					}
+
+					// if we found a redundant segment, log it and remove it
+					if (loc.redundant) {
+						ArrayAppend(loc.redundantSegments, loc.segments[loc.i]);
+						ArrayDeleteAt(loc.segments, loc.i);
+
+						// adjust counters to continue looping
+						loc.i--;
+						loc.segmentCount--;
+						loc.redundant = false;
+					}
+				}
+
+				// loop over redundant segments (in reverse order) and combine segments that are direct children
+				for (loc.i = ArrayLen(loc.redundantSegments); loc.i GTE 1; loc.i--) {
+					loc.regex = "^" & loc.redundantSegments[loc.i] & "_(.+)$";
+
+					// search for a direct child of the redundant prefix
+					for (loc.j = 1; loc.j LTE loc.segmentCount; loc.j++) {
+						if (REFind(loc.regex, loc.segments[loc.j])) {
+
+							// strip out prefix and surround with parenthesis
+							loc.matches = balancedParen(REReplace(loc.segments[loc.j], loc.regex, "\1"));
+							loc.secondMatch = false;
+
+							// try to find other matches in a row
+							while (loc.j + 1 LTE loc.segmentCount) {
+
+								// break if we don't find one immediately
+								if (NOT REFind(loc.regex, loc.segments[loc.j + 1]))
+									break;
+
+								// if we did find one, strip out prefix, append to matches, and remove from segment array
+								loc.matches &= "," & balancedParen(REReplace(loc.segments[loc.j + 1], loc.regex, "\1"));
+								ArrayDeleteAt(loc.segments, loc.j + 1);
+								loc.segmentCount--;
+								loc.secondMatch = true;
+							}
+
+							// if we found more than one match, combine into single segment
+							if (loc.secondMatch)
+								loc.segments[loc.j] = loc.redundantSegments[loc.i] & "_" & loc.matches;
+						}
+					}
+				}
+
+				// add parenthesis to each include string and append them to the return list
+				for (loc.i = 1; loc.i LTE loc.segmentCount; loc.i++)
+					loc.finalInclude = ListAppend(loc.finalInclude, balancedParen(loc.segments[loc.i]));
 			}
 		}
-		return loc.rtn;
+
+		return loc.finalInclude;
 	</cfscript>
+</cffunction>
+
+<cffunction name="balancedParen" returntype="string" access="private" hint="Replace underscores in strings with balanced parenthesis">
+	<cfargument name="str" type="string" required="true" />
+	<cfreturn Replace(arguments.str, "_", "(", "ALL") & RepeatString(")", ListLen(arguments.str, "_") - 1) />
 </cffunction>
 
 <cffunction name="_appendFieldsToClause" returntype="void" access="private" hint="Append list(s) to the ">
@@ -366,9 +605,13 @@
 			// parse each parameter and append to desired scope
 			for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++) {
 				loc.value = _transformInput(arguments.args[loc.i], arguments.clause);
-				loc.jEnd = ArrayLen(loc.value);
-				for (loc.j = 1; loc.j LTE loc.jEnd; loc.j++)
-					ArrayAppend(this.sql[arguments.scope], loc.value[loc.j]);
+				if (IsArray(loc.value)) {
+					loc.jEnd = ArrayLen(loc.value);
+					for (loc.j = 1; loc.j LTE loc.jEnd; loc.j++)
+						ArrayAppend(this.sql[arguments.scope], loc.value[loc.j]);
+				} else {
+					ArrayAppend(this.sql[arguments.scope], loc.value);
+				}
 			}
 		}
 	</cfscript>
@@ -389,59 +632,58 @@
 			
 		// if a text clause was passed, we need to parse entire clause and add passed in params
 		} else if (StructKeyExists(arguments.args, "$clause")) {
-			loc.type = typeOf(arguments.args.$clause);
-			loc.parameterCount = ArrayLen(arguments.args.$params);
+		
+			if (variables.cacheSql)
+				appendSignature(arguments.clause, {$clause=arguments.args.$clause});
 				
-			// go ahead and confirm parameter count unless clause is literal
-			if (loc.type EQ "simple") {
-			
-				// make sure string has length
-				if (Len(arguments.args.$clause) EQ 0)
-					throwException(message="#UCase(arguments.clause)# clause strings must have length > 0");
-				
-				// count the number of placeholders in clause and argument array
-				//loc.placeholderCount = Len(arguments.args.$clause) - Len(Replace(arguments.args.$clause, "?", "", "ALL"));
-				
-				// make sure the numbers are equal
-				// if (loc.placeholderCount NEQ loc.parameterCount)
-					//throwException(message="Parameter count does not match number of placeholders in #UCase(arguments.clause)# clause");
-			}
-			
-			// TODO: if literal is passed in, inject positional parameters into string
-				
-			// append clause with parameters to sql scope
-			ArrayAppend(this.sql[arguments.scope], _transformInput(arguments.args.$clause, arguments.clause, arguments.args.$params));
+			// append clause and parameters to relation object
+			ArrayAppend(this.sql[arguments.scope], _transformInput(arguments.args.$clause, arguments.clause));
+			ArrayAppend(this.params[arguments.scope], arguments.args.$params, true);
 			
 		// if key/value pairs were passed, comparison nodes should be added with parameters
 		} else {
+
+			// store a hypothetical clause with parameter placeholders for caching purposes
+			loc.cacheClause = [];
+
+			// loop over each key=value pair in the clause
 			for (loc.key in arguments.args) {
 				
 				// FIXME: (1) railo seems to keep these arguments around
 				if (ListFindNoCase("$clause,$params", loc.key))
 					continue;
 				
-				// grab the value from arguments and decide its type
-				loc.value = arguments.args[loc.key];
-				loc.type = typeOf(loc.value);
-				
 				// use an IN if value is an array
-				if (loc.type EQ "array")
-					loc.clause = "#loc.key# IN (?)";
+				if (IsArray(arguments.args[loc.key])) {
+					loc.clause = sqlBinaryOp(sqlColumn(column=loc.key), "IN", sqlParam(column=loc.key));
+					ArrayAppend(loc.cacheClause, "#loc.key# IN ?");
 					
 				// use an equality check if value is simple
-				else if (loc.type EQ "simple")
-					loc.clause = "#loc.key# = ?";
+				} else if (IsSimpleValue(arguments.args[loc.key])) {
+					loc.clause = sqlBinaryOp(sqlColumn(column=loc.key), "=", sqlParam(column=loc.key));
+					ArrayAppend(loc.cacheClause, "#loc.key# = ?");
 					
 				// throw an error otherwise
-				else
+				} else {
 					throwException("Invalid parameter to #UCase(arguments.clause)# clause. Only arrays and simple values may be used.");
+				}
+
+				// append parameters to the relation
+				ArrayAppend(this.params[arguments.scope], arguments.args[loc.key]);
 				
 				// FIXME: (2) note that we found a good value
 				loc.success = true;
 					
 				// append clause to correct scope
-				ArrayAppend(this.sql[arguments.scope], _transformInput(loc.clause, arguments.clause, [loc.value]));
+				ArrayAppend(this.sql[arguments.scope], _transformInput(loc.clause, arguments.clause));
+
+				// blank out named argument for caching purposes
+				arguments.args[loc.key] = "";
 			}
+		
+			// store signature with a hypothetical conditional clause, as if we weren't using key=value params
+			if (variables.cacheSql)
+				appendSignature(arguments.clause, {$clause=ArrayToList(loc.cacheClause, " AND ")});
 			
 			// FIXME: (3) throw an error if a good value was not found
 			if (NOT StructKeyExists(loc, "success"))
@@ -453,20 +695,16 @@
 <cffunction name="_transformInput" returntype="any" access="private">
 	<cfargument name="obj" type="any" required="true">
 	<cfargument name="clause" type="string" default="SELECT">
-	<cfargument name="params" type="array" default="#ArrayNew(1)#">
 	<cfscript>
-		var loc = {};
-		loc.type = typeOf(arguments.obj);
-		
-		// nodes should pass straight through
-		if (REFindNoCase("^cfrel\.nodes\.", loc.type) GT 0)
-			return arguments.obj;
-
 		// parse simple values with parser
-		if (loc.type EQ "simple")
-			return parse(arguments.obj, arguments.clause, arguments.params);
+		if (IsSimpleValue(arguments.obj))
+			return parse(arguments.obj, arguments.clause);
+
+		// nodes should pass straight through
+		if (REFindNoCase("^cfrel\.nodes\.", typeOf(arguments.obj)) GT 0)
+			return arguments.obj;
 			
-		// throw error if we havent found it yet
+		// throw error if we haven't found it yet
 		throwException("Invalid object type passed into #UCase(arguments.clause)#");
 	</cfscript>
 </cffunction>

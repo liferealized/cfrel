@@ -1,3 +1,18 @@
+<!------------------------
+--- Mapping Structures ---
+------------------------->
+
+<cffunction name="emptyMap" returntype="struct" access="public" hint="Generate an empty mapping structure">
+	<cfscript>
+		var map = StructNew();
+		map.tables = StructNew();
+		map.aliases = StructNew();
+		map.columns = StructNew();
+		map.includes = StructNew();
+	</cfscript>
+	<cfreturn map />
+</cffunction>
+
 <!---------------------
 --- Node Generation ---
 ---------------------->
@@ -55,6 +70,14 @@
 	<cfreturn constructObject("cfrel.nodes.Function", arguments)>
 </cffunction>
 
+<cffunction name="sqlInclude" returntype="any" access="private">
+	<cfargument name="include" type="string" required="true" />
+	<cfargument name="tree" type="struct" required="true" />
+	<cfargument name="includeKey" type="string" default="#arguments.include#" />
+	<cfargument name="includeSoftDeletes" type="boolean" required="false" />
+	<cfreturn constructObject("cfrel.nodes.Include", arguments)>
+</cffunction>
+
 <cffunction name="sqlJoin" returntype="any" access="private">
 	<cfargument name="table" type="any" required="true" />
 	<cfargument name="condition" type="any" default="false" />
@@ -67,6 +90,13 @@
 	<cfreturn constructObject("cfrel.nodes.Literal", arguments)>
 </cffunction>
 
+<cffunction name="sqlModel" returntype="any" access="private">
+	<cfargument name="model" type="string" required="true" />
+	<cfargument name="alias" type="string" default="" />
+	<cfargument name="includeSoftDeletes" type="boolean" required="false" />
+	<cfreturn constructObject("cfrel.nodes.Model", arguments)>
+</cffunction>
+
 <cffunction name="sqlOrder" returntype="any" access="private">
 	<cfargument name="subject" type="any" required="true" />
 	<cfargument name="descending" type="boolean" default="false" />
@@ -74,7 +104,7 @@
 </cffunction>
 
 <cffunction name="sqlParam" returntype="any" access="private">
-	<cfargument name="value" type="any" required="true" />
+	<cfargument name="value" type="any" required="false" />
 	<cfargument name="null" type="boolean" default="false" />
 	<cfargument name="cfsqltype" type="string" required="false" />
 	<cfargument name="column" type="string" required="false" />
@@ -86,15 +116,21 @@
 	<cfreturn constructObject("cfrel.nodes.Paren", arguments)>
 </cffunction>
 
+<cffunction name="sqlQuery" returntype="any" access="private">
+	<cfargument name="subject" type="query" required="true" />
+	<cfargument name="alias" type="string" default="" />
+	<cfreturn constructObject("cfrel.nodes.Query", arguments)>
+</cffunction>
+
 <cffunction name="sqlSubQuery" returntype="any" access="private">
 	<cfargument name="subject" type="any" required="true" />
+	<cfargument name="alias" type="string" default="" />
 	<cfreturn constructObject("cfrel.nodes.SubQuery", arguments)>
 </cffunction>
 
 <cffunction name="sqlTable" returntype="any" access="private">
 	<cfargument name="table" type="string" default="" />
 	<cfargument name="alias" type="string" default="" />
-	<cfargument name="model" type="any" default="false" />
 	<cfreturn constructObject("cfrel.nodes.Table", arguments)>
 </cffunction>
 
@@ -122,8 +158,7 @@
 	<cfscript>
 		var loc = {};
 		loc.obj = {$class=arguments.class};
-		for (loc.key in arguments.args)
-			loc.obj[loc.key] = arguments.args[loc.key];
+		StructAppend(loc.obj, arguments.args);
 		return loc.obj;
 	</cfscript>
 </cffunction>

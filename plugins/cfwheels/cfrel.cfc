@@ -1,15 +1,33 @@
 <cfcomponent output="false" mixin="model">
-	
+
+	<!--- TODO: Move this to a place where it can be used without CFWheels --->
 	<cffunction name="init" returntype="any" access="public">
 		<cfscript>
 			
 			// set compatible Wheels version
 			this.version = "1.1,1.1.1,1.1.2,1.1.3,1.1.4,1.1.5";
+
+			// create a Java Concurrent object proxies to use for application-level concurrency of application.cfrel and application.cfrel caches
+			var concurrentHashMapProxy = CreateObject("java", "java.util.concurrent.ConcurrentHashMap");
+			var concurrentLinkedQueue = CreateObject("java", "java.util.concurrent.ConcurrentLinkedQueue");
 			
 			// set up cfrel cfc mappings
 			application.cfrel = {};
 			application.cfrel.cfcPrefix = "plugins.cfrel.lib";
-				
+
+			Application.cfrel.HASH_ALGORITHM = "MD5";
+
+			Application.cfrel.allowCaching = true;
+
+			// create caches and cache info structures
+			Application.cfrel.cache = concurrentHashMapProxy.init();
+			for (var cacheName in ["parse", "map", "sql", "signatureHash"]) {
+				Application.cfrel.cache[cacheName] = concurrentHashMapProxy.init();
+				Application.cfrel.cacheSizeSamples[cacheName] = concurrentLinkedQueue.init();
+			}
+
+			// link some java proxies to application scope for better performance in cfrel
+			application.cfrel.javaProxies.concurrentLinkedQueue = concurrentLinkedQueue;
 			return this;
 		</cfscript>
 	</cffunction>
@@ -236,6 +254,9 @@
 		<cfargument name="parameterize" type="boolean" default="false" />
 		<cfargument name="includeSoftDeletes" type="boolean" default="false" />
 		<cfargument name="useDefaultScope" type="boolean" default="#$useDefaultScope()#" />
+		<cfargument name="cacheParse" type="boolean" default="true" />
+		<cfargument name="cacheMap" type="boolean" default="true" />
+		<cfargument name="cacheSql" type="boolean" default="true" />
 		<cfscript>
 			var loc = {};
 			
@@ -272,6 +293,10 @@
 	
 	<cffunction name="select" returntype="any" access="public" hint="Append columns to SELECT clause">
 		<cfreturn this.rel().select(argumentCollection=arguments) />
+	</cffunction>
+	
+	<cffunction name="selectGroup" returntype="any" access="public" hint="Append columns to SELECT and GROUP BY clause">
+		<cfreturn this.rel().selectGroup(argumentCollection=arguments) />
 	</cffunction>
 	
 	<cffunction name="distinct" returntype="any" access="public" hint="Make a relation DISTINCT">

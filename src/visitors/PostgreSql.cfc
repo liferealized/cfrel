@@ -1,14 +1,11 @@
 <cfcomponent extends="Sql" output="false">
 	<!--- cfrel.visitors.Sql should give correct Postgres syntax --->
 	
-	<cffunction name="_escapeSqlEntity" returntype="string" access="private"  hint="Escape SQL column and table names">
+	<cffunction name="escape" returntype="string" access="private"  hint="Escape SQL column and table names">
 		<cfargument name="subject" type="string" required="true" />
 		<cfscript>
-			var loc = {};
-			loc.reg = "[^ \t'.,""\(\)]+";
-			if (REFind("^(#loc.reg#)(\.#loc.reg#)*$", arguments.subject) EQ 0)
-				return arguments.subject;
-			return REReplace(arguments.subject, "(^|\.)(#loc.reg#)", '\1"\2"', "ALL");
+			arguments.subject = REReplace(arguments.subject, "[\[\]""`]", "", "ALL");
+			return '"' & Replace(arguments.subject, '.', '"."', "ALL") & '"';
 		</cfscript>
 	</cffunction>
 </cfcomponent>
