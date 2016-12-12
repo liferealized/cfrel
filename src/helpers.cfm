@@ -17,7 +17,7 @@
 	<cfargument name="obj" type="any" required="true" />
 	<cfscript>
 		// NOTE: we are checking these types in order of most likely to occur (or as dictated by type conflicts)
-			
+
 		// simple string/numeric values
 		if (IsSimpleValue(arguments.obj)) {
 			return "simple";
@@ -33,11 +33,11 @@
 			return "query";
 		} else if (IsCustomFunction(arguments.obj)) {
 			return "function";
-			
+
 		// if all else fails, use getMetaData() to determine if it is an object or a struct
 		} else {
 			var meta = getMetaData(arguments.obj);
-			
+
 			// if the argument is a component/object, return its path
 			if (IsArray(meta) EQ false AND StructKeyExists(meta, "fullname")) {
 				if (REFindNoCase("(^|\.)models\.", meta.fullname) EQ 0)
@@ -88,7 +88,7 @@
 	<cfscript>
 		var loc = {};
 		loc.key = arguments.key;
-				
+
 		// if key already used, try prepending a prefix
 		if (StructKeyExists(arguments.scope, loc.key) AND Len(arguments.prefix))
 			loc.key = arguments.key = arguments.prefix & arguments.key;
@@ -96,11 +96,11 @@
 		// if we are always numbering the key, append the start number and increment it
 		if (arguments.alwaysNumber)
 			loc.key = arguments.key & arguments.start++;
-			
+
 		// if key still conflicts, start appending numbers
 		for (loc.j = arguments.start; StructKeyExists(arguments.scope, loc.key); loc.j++)
 			loc.key = arguments.key & loc.j;
-		
+
 		return loc.key;
 	</cfscript>
 </cffunction>
@@ -185,7 +185,7 @@
 	</cfscript>
 </cffunction>
 
-<cffunction name="arrayLast" returntype="any" access="private" hint="Return the last item in an array">
+<cffunction name="$arrayLast" returntype="any" access="private" hint="Return the last item in an array">
 	<cfargument name="array" type="array" required="true" />
 	<cfreturn arguments.array[ArrayLen(arguments.array)] />
 </cffunction>
@@ -208,7 +208,7 @@
 	</cfscript>
 </cffunction>
 
-<cffunction name="sizeOf" returntype="numeric" access="public">
+<cffunction name="$sizeOf" returntype="numeric" access="public">
 	<cfargument name="obj" type="any" required="true" />
 	<cfscript>
 		var loc = {};
@@ -256,7 +256,7 @@
 		else if (IsBinary(arguments.obj))
 			return ObjectLoad(arguments.obj);
 		else if (IsArray(arguments.obj)) {
-			var printableObj = [];	
+			var printableObj = [];
 			for (var i = 1; i < ArrayLen(arguments.obj); i++)
 				printableObj[i] = getPrintable(arguments.obj[i]);
 		}
