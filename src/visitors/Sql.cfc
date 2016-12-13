@@ -1,17 +1,17 @@
 <cfcomponent output="false">
 	<cfinclude template="../functions.cfm" />
-	
+
 	<cffunction name="init" returntype="any" access="public" hint="Constructor">
 		<cfscript>
 			return this;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="traverseToString" returntype="string" access="public" hint="Return tree traversal as SQL string">
 		<cfargument name="obj" type="any" required="true" />
 		<cfreturn sqlArrayToString(visit(argumentCollection=arguments)) />
 	</cffunction>
-	
+
 	<cffunction name="visit" returntype="array" access="public" hint="Visit a particular object">
 		<cfargument name="obj" type="any" required="true" />
 		<cfargument name="rtn" type="any" required="false" />
@@ -32,22 +32,21 @@
 			// create a new state if one is not passed in
 			if (NOT StructKeyExists(arguments, "state"))
 				arguments.state = newState(map=arguments.map);
-			
+
 			// find type of object
 			loc.type = typeOf(arguments.obj);
-			
+
 			// get classname of component passed in (and shorten name for cfrel.xxx.yyy to xxx.yyy)
 			if (REFind("^(\w+)(\.\w+)+$", loc.type))
 				loc.type = REREplace(Replace(loc.type, ".", "_", "ALL"), "^cfrel_", "");
-			
+
 			// construct method name for type. throw exception if it doesnt exist
 			loc.method = "visit_#loc.type#";
 			if (NOT StructKeyExists(variables, loc.method))
 				throwException("No visitor exists for type: #loc.type#");
-			
+
 			// call visit_xxx_yyy method
-			method = variables[loc.method];
-			return method(argumentCollection=arguments);
+			return $invoke(method=loc.method, invokeArgs=arguments);
 		</cfscript>
 	</cffunction>
 
@@ -77,27 +76,27 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<!-------------------
 	--- Main Visitors ---
 	-------------------->
-	
+
 	<cffunction name="visit_relation" returntype="array" access="private" hint="Generate general SQL for a relation">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
 			var loc = {};
-			
+
 			// create new state and pass in additional mappings
 			arguments.map = arguments.obj.getMap();
 			arguments.state = newState(map=arguments.map);
-			
+
 			// set some control variables to reduce load
 			loc.select = false;
-			
+
 			// turn aliasing on in select clause
 			loc.aliasOff = arguments.state.aliasOff;
 			arguments.state.aliasOff = false;
-			
+
 			// generate SELECT clause
 			ArrayAppend(arguments.rtn, "SELECT");
 			if (ArrayLen(obj.sql.selectFlags) GT 0)
@@ -108,29 +107,29 @@
 				arguments.rtn = visit_list(obj=obj.sql.select, argumentCollection=arguments);
 				loc.select = true;
 			}
-			
+
 			// generate FROM arguments
 			if (ArrayLen(obj.sql.froms) GT 0) {
 				ArrayAppend(arguments.rtn, "FROM");
 				arguments.state.softDeleteContext = "from";
 				arguments.rtn = visit_list(obj=obj.sql.froms, argumentCollection=arguments);
 				arguments.state.softDeleteContext = "other";
-					
+
 			// error if neither SELECT or FROM was specified
 			} else if (loc.select EQ false) {
 				throwException("Either SELECT or FROM must be specified in relation");
 			}
-			
+
 			// turn aliasing off outside of SELECT clause
 			arguments.state.aliasOff = true;
- 			
+
 			// append joins
 			if (ArrayLen(obj.sql.joins) GT 0) {
 				arguments.state.softDeleteContext = "join";
 				arguments.rtn = visit(obj=obj.sql.joins, argumentCollection=arguments);
 				arguments.state.softDeleteContext = "other";
 			}
-			
+
 			// append where clause and/or soft deletes
 			if (ArrayLen(obj.sql.wheres) OR ArrayLen(arguments.state.softDeletes.wheres)) {
 				ArrayAppend(arguments.rtn, "WHERE");
@@ -157,23 +156,23 @@
 				ArrayAppend(arguments.rtn, "ORDER BY");
 				arguments.rtn = visit_list(obj=obj.sql.orders, argumentCollection=arguments);
 			}
-			
+
 			// turn aliasing back on
 			arguments.state.aliasOff = loc.aliasOff;
-			
+
 			// generate LIMIT clause
 			if (StructKeyExists(obj.sql, "limit"))
 				ArrayAppend(arguments.rtn, "LIMIT #obj.sql.limit#");
-				
+
 			// generate OFFSET clause
 			if (StructKeyExists(obj.sql, "offset") AND obj.sql.offset GT 0)
 				ArrayAppend(arguments.rtn, "OFFSET #obj.sql.offset#");
-				
+
 			// return sql array
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_simple" returntype="array" access="private" hint="Render a simple value by just returning it">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -181,7 +180,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_array" returntype="array" access="private" hint="Call visit on each element of array">
 		<cfargument name="obj" type="array" required="true" />
 		<cfscript>
@@ -192,38 +191,38 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<!-------------------
 	--- Node Visitors ---
 	-------------------->
-	
+
 	<cffunction name="visit_nodes_alias" returntype="any" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
 			var loc = {};
-			
+
 			// only use alias
 			if (arguments.state.aliasOnly) {
 				ArrayAppend(arguments.rtn, escape(obj.alias));
-				
+
 			// don't use alias, only subject
 			} else if (arguments.state.aliasOff) {
 				arguments.rtn = visit(obj=obj.subject, argumentCollection=arguments);
-				
+
 			// use both, but ignore any aliases inside of subject
 			} else {
-				
+
 				loc.aliasOff = arguments.state.aliasOff;
 				arguments.state.aliasOff = true;
 				arguments.rtn = visit(obj=obj.subject, argumentCollection=arguments);
 				ArrayAppend(arguments.rtn, "AS #escape(obj.alias)#");
 				arguments.state.aliasOff = loc.aliasOff;
 			}
-			
+
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_between" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -235,7 +234,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_binaryOp" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -265,7 +264,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_case" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -294,7 +293,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_caseCondition" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -305,7 +304,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_cast" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -317,7 +316,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_column" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -367,7 +366,7 @@
 			return visit(obj=arguments.map.includes[arguments.obj.includeKey], argumentCollection=arguments);
 		</cfscript>
 	</cffunction>
- 	
+
 	<cffunction name="visit_nodes_join" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -403,7 +402,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_literal" returntype="array" access="private" hint="Render a literal SQL string">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -411,7 +410,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_function" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -444,7 +443,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_order" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -456,7 +455,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_param" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -477,11 +476,11 @@
 
 			// append parameter object as it is
 			ArrayAppend(arguments.rtn, loc.obj);
-			
+
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_paren" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -491,7 +490,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_subquery" returntype="array" access="private" hint="Render a subquery with an alias">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -502,12 +501,12 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_query" returntype="array" access="private" hint="Render a query as a QOQ reference">
 		<cfargument name="obj" type="any" required="true" />
 		<cfreturn visit(obj=sqlTable(table="query", alias=obj.alias), argumentCollection=arguments) />
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_table" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -543,12 +542,12 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_model" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfreturn visit(obj=sqlTable(table=arguments.obj.model, alias=obj.alias), argumentCollection=arguments) />
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_type" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -564,7 +563,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_unaryOp" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -573,7 +572,7 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<cffunction name="visit_nodes_wildcard" returntype="array" access="private">
 		<cfargument name="obj" type="any" required="true" />
 		<cfscript>
@@ -593,7 +592,7 @@
 					}
 				}
 			}
-			
+
 			// if we found columns to map to, generate a list of them while skipping mappings
 			if (ArrayLen(loc.columns)) {
 				arguments.rtn = visit_list(obj=loc.columns, map=emptyMap(), argumentCollection=arguments);
@@ -610,11 +609,11 @@
 			return arguments.rtn;
 		</cfscript>
 	</cffunction>
-	
+
 	<!-----------------------
 	--- Private Functions ---
 	------------------------>
-	
+
 	<cffunction name="escape" returntype="string" access="private" hint="Escape SQL column and table names">
 		<cfargument name="subject" type="string" required="true" />
 		<cfreturn arguments.subject />
