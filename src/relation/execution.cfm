@@ -68,57 +68,57 @@
 	</cfscript>
 </cffunction>
 
-<cffunction name="query" returntype="query" access="public" hint="Lazily execute and return query object">
+<cffunction name="$query" returntype="query" access="public" hint="Lazily execute and return query object">
 	<cfargument name="callbacks" type="boolean" default="true" />
 	<cfargument name="allowSpecialPaging" type="boolean" default="false" />
 	<cfscript>
 		var loc = {};
-				
+
 		// run before find callbacks on relation
 		if (arguments.callbacks)
 			mapper().beforeFind(this);
-		
+
 		// drop into query logic if we don't have a query yet
 		if (variables.executed EQ false OR NOT StructKeyExists(variables.cache, "query")) {
 			clearCache();
-			
+
 			// do some special handling for paged SqlServer queries with aggregates
 			if (arguments.allowSpecialPaging AND variables.visitorClass EQ "SqlServer" AND variables.paged AND ArrayLen(this.sql.groups)) {
-				
+
 				// get values for rows that don't use aggregates
 				loc.valueRel = minimizedRelation();
 				loc.valueQuery = loc.valueRel.query(false, false);
-				
+
 				// create a new clone without pagination
 				loc.dataRel = clone().clearPagination();
-				
+
 				// loop over items that were in last select
 				loc.iEnd = ArrayLen(loc.valueRel.sql.select);
 				for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++) {
-					
-					// get key + value list for 
+
+					// get key + value list for
 					loc.item = loc.valueRel.sql.select[loc.i];
 					loc.key = loc.item.alias;
 					loc.keyValues = ListToArray(Evaluate("ValueList(loc.valueQuery.#loc.key#, Chr(7))"), Chr(7));
-					
+
 					// add new where clause entries for IN statements
 					loc.dataRel.where(sqlBinaryOp(left=loc.item, op='IN', right='(?)'), [loc.keyValues]);
 				}
-				
+
 				// save objects into current relation
 				variables.cache.query = loc.dataRel.query(arguments.callbacks, false);
 				variables.cache.result = loc.dataRel.result();
-			
+
 			} else {
-				
+
 				// set up arguments for query execution
 				loc.queryArgs = {};
 				loc.queryArgs.sql = this.toSqlArray();
-				
+
 				// use max rows if specified
 				if (this.maxRows GT 0)
 					loc.queryArgs.maxRows = this.maxRows;
-				
+
 				// if we are using query of a query, set dbtype and resultsets
 				if (variables.qoq) {
 					loc.queryArgs.dbType = "query";
@@ -126,26 +126,26 @@
 					for (loc.i = 1; loc.i LTE loc.iEnd; loc.i++) {
 						loc.queryArgs["query" & loc.i] = this.sql.froms[loc.i].subject;
 					}
-					
+
 				} else {
-			
+
 					// set up a datasource
 					if (Len(this.datasource) EQ 0)
 						throwException("Cannot execute query without a datasource");
 					loc.queryArgs.datasource = this.datasource;
 				}
-				
+
 				// execute query using a wrapper
 				$executeQuery(argumentCollection=loc.queryArgs);
-				
+
 				// run after find callbacks on query
 				if (arguments.callbacks AND this.model NEQ false)
 					mapper().afterFind(this.model, variables.cache.query);
-				
+
 				// set up looping counter
 				variables.currentRow = 0;
 			}
-			
+
 			// build pagination data
 			// todo: lazy loading?
 			if (variables.paged) {
@@ -154,11 +154,11 @@
 					perPage = this.sql.limit
 				};
 			}
-			
+
 			// change state
 			variables.executed = true;
 		}
-		
+
 		return variables.cache.query;
 	</cfscript>
 </cffunction>
@@ -207,8 +207,8 @@
 		// if no type has been set, default to a string
 		if (NOT StructKeyExists(loc.param, "cfsqltype"))
 			loc.param.cfsqltype = "cf_sql_char";
-					
-		
+
+
 		// if value is an array, set up list params
 		if (IsArray(loc.param.value)) {
 			loc.param.null = ArrayLen(loc.param.value) EQ 0;
