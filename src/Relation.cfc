@@ -1,18 +1,33 @@
-<cfcomponent output="false">
-	<cfinclude template="functions.cfm" />
-	<cfinclude template="relation/cache.cfm" />
-	<cfinclude template="relation/execution.cfm" />
-	<cfinclude template="relation/initialization.cfm" />
-	<cfinclude template="relation/looping.cfm" />
-	<cfinclude template="relation/mapping.cfm" />
-	<cfinclude template="relation/objects.cfm" />
-	<cfinclude template="relation/onMissingMethod.cfm" />
-	<cfinclude template="relation/pagination.cfm" />
-	<cfinclude template="relation/query.cfm" />
-	<cfinclude template="parser/parse.cfm" />
-	<cfinclude template="parser/grammar.cfm" />
+component output="false" {
+	include template="relation/cache.cfm";
+	include template="relation/execution.cfm";
+	include template="relation/initialization.cfm";
+	include template="relation/looping.cfm";
+	include template="relation/mapping.cfm";
+	include template="relation/objects.cfm";
+	include template="relation/onMissingMethod.cfm";
+	include template="relation/pagination.cfm";
+	include template="relation/query.cfm";
+	include template="parser/parse.cfm";
+	include template="parser/grammar.cfm";
+	include template="caching/caching.cfm";
+	include template="caching/caching-control.cfm";
+	include template="caching/signatures.cfm";
+	include template="functions.cfm";
 
-	<cfinclude template="caching/caching.cfm" />
-	<cfinclude template="caching/caching-control.cfm" />
-	<cfinclude template="caching/signatures.cfm" />
-</cfcomponent>
+	function query() {
+		return $query(argumentCollection = arguments);
+	}
+
+	function struct() {
+		return $struct(argumentCollection = arguments);
+	}
+
+	function arrayLast() {
+		return $arrayLast(argumentCollection = arguments);
+	}
+
+	function sizeOf() {
+		return $sizeOf(argumentCollection = arguments);
+	}
+}
