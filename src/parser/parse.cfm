@@ -3,7 +3,7 @@
 	<cfargument name="clause" type="string" default="WHERE" />
 	<cfscript>
 		var loc = {};
-		
+
 		// determine beginning grammar rule
 		switch (arguments.clause) {
 			case "SELECT":
@@ -16,33 +16,32 @@
 			default:
 				loc.rule = "expr";
 		}
-		
+
 		// try to read from cache if turned on
 		if (variables.cacheParse) {
-		
+
 			// create key for cache
 			loc.cacheKey = Hash("#loc.rule#:#variables.parameterize#:#arguments.str#", Application.cfrel.HASH_ALGORITHM);
-			
+
 			// if key is in cache, just return cached parse tree
 			if (inCache("parse", loc.cacheKey))
 				return Duplicate(loadCache("parse", loc.cacheKey));
 		}
-		
+
 		// break incoming string into tokens
 		tokenize(arguments.str);
 
 		// match against selected grammar rule
-		var method = variables[loc.rule];
-		loc.tree = method();
-		
+		loc.tree = $invoke(method=loc.rule);
+
 		// if tokens are still left, throw an error
 		if (tokenIndex LTE tokenLen)
 			throwException("Parsing error. Not all tokens processed. #tokenIndex - 1# of #tokenLen# processed.");
-			
+
 		// cache the parse tree in the application scope
 		if (variables.cacheParse)
 			saveCache("parse", loc.cacheKey, Duplicate(loc.tree));
-		
+
 		return loc.tree;
 	</cfscript>
 </cffunction>
@@ -51,28 +50,28 @@
 	<cfargument name="str" type="string" required="true" />
 	<cfscript>
 		var loc = {};
-		
+
 		// regular expression for string and numeric literals
 		loc.literalRegex = "('{ts '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'}'|'([^']*((\\|')'[^']*)*[^\'])?'|-?(\B|\b\d+)\.\d+\b|-?\b\d+\b)";
-		
+
 		// regular expression for all terminals (including literal placeholders)
 		loc.terminalRegex = "::(dt|str|dec|int)::|\?|\.|,|\(|\)|\+|-|&|\^|\||\*|/|%|~|<=>|<=|>=|<>|!=|!>|!<|=|<|>|\b(AS|NOT|LIKE|BETWEEN|AND|OR|ASC|DESC|NULL|CAST|IS|IN|CASE|WHEN|THEN|ELSE|END|DISTINCT)\b|[\[""`]?(\w+)[""`\]]?";
 
 		// extract literals (strings, numbers, dates, etc) out of the input string
 		variables.literals = REMatch(loc.literalRegex, arguments.str);
-		
+
 		// replace literals with placeholders
 		arguments.str = REReplaceNoCase(arguments.str, "'{ts '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'}'", "::dt::", "ALL");
 		arguments.str = REReplaceNoCase(arguments.str, "'([^']*((\\|')'[^']*)*[^\'])?'", "::str::", "ALL");
 		arguments.str = REReplaceNoCase(arguments.str, "-?(\B|\b\d+)\.\d+\b", "::dec::", "ALL");
 		arguments.str = REReplaceNoCase(arguments.str, "-?\b\d+\b", "::int::", "ALL");
-		
+
 		// replace escaped identifiers with their unescaped values
 		arguments.str = REReplace(arguments.str, "[\[""`]?(\w+)[""`\]]?", "\1", "ALL");
-		
+
 		// split string into tokens using using terminal pattern
 		variables.tokens = REMatchNoCase(loc.terminalRegex, arguments.str);
-		
+
 		// set up counters for rest of parse
 		variables.tokenIndex = 1;
 		variables.tokenLen = ArrayLen(variables.tokens);
