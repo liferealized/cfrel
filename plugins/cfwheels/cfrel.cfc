@@ -8,7 +8,7 @@
 
 			// set up cfrel cfc mappings
 			application.cfrel = {};
-			application.cfrel.cfcPrefix = "plugins.cfrel.lib";
+			application.cfrel.cfcPrefix = "plugins.cfrel.src";
 
 			return this;
 		</cfscript>
@@ -274,9 +274,9 @@
 			}
 
 			// create relation object
-			loc.rel = CreateObject("component", "plugins.cfrel.lib.Relation");
+			loc.rel = CreateObject("component", "plugins.cfrel.src.Relation");
 			loc.rel.init(
-				datasource=variables.wheels.class.connection.datasource,
+				datasource=variables.wheels.class.datasource,
 				visitor=variables.wheels.class.cfrelVisitor,
 				mapper="CFWheels",
 				argumentCollection=arguments
